@@ -2,39 +2,45 @@ const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
 const path = require('path');
 
-// Безопасно получаем токен из переменных окружения Vercel
 const token = process.env.TELEGRAM_TOKEN;
-
-// Для Vercel мы выключаем polling (polling: false)
 const bot = new TelegramBot(token, { polling: false });
 
 const app = express();
-app.use(express.json()); // Обязательно для парсинга запросов от Telegram
+app.use(express.json());
 
-// Раздача папки с игрой (index.html должен лежать в папке public)
-app.use(express.static(path.join(__dirname, 'public')));
+// Главная страница: отдаем index.html напрямую из папки public
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
-// URL вашей игры (Vercel сам подставит домен вашего сайта в переменную VERCEL_URL)
-const GAME_URL = process.env.VERCEL_URL 
-  ? `https://${process.env.VERCEL_URL}/index.html` 
-  : 'https://your-domain.com'; // Запасной вариант
+// То же самое для явного пути /index.html
+app.get('/index.html', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
-// Секретный маршрут, куда Telegram будет присылать сообщения пользователей
+// Обработка запросов от Telegram бота
 app.post(`/bot${token}`, (req, res) => {
-    bot.processUpdate(req.body);
+    try {
+        bot.processUpdate(req.body);
+    } catch (err) {
+        console.error('Ошибка обработки апдейта бота:', err);
+    }
     res.sendStatus(200);
 });
 
 // Логика команды /start
 bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
-    bot.sendMessage(chatId, "🎮 Добро пожаловать в Critters Pinball! Нажмите кнопку ниже для запуска:", {
+    // Ссылка на ваше Mini App, созданное в BotFather
+    const appUrl = `https://t.me/BurmaldaPinballbot/myapp`; 
+
+    bot.sendMessage(chatId, "🎮 Добро пожаловать в Critters Pinball! Нажмите кнопку ниже, чтобы запустить приложение:", {
         reply_markup: {
             inline_keyboard: [
                 [
                     {
                         text: "🎰 Играть в Пинбол",
-                        web_app: { url: GAME_URL }
+                        url: appUrl // Ведёт на ваше Mini App
                     }
                 ]
             ]
@@ -42,5 +48,4 @@ bot.onText(/\/start/, (msg) => {
     });
 });
 
-// Экспортируем приложение для работы в режиме Serverless на Vercel
 module.exports = app;
