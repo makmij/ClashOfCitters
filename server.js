@@ -21,7 +21,7 @@ app.post(`/bot${process.env.TELEGRAM_TOKEN}`, async (req, res) => {
         const chatId = update.message.chat.id;
         
         // Ваша ссылка на Mini App от BotFather
-        const appUrl = `https://t.me`; 
+        const appUrl = `https://t.me/BurmaldaPinballbot/game`; 
 
         const messageData = {
             chat_id: chatId,
@@ -35,7 +35,7 @@ app.post(`/bot${process.env.TELEGRAM_TOKEN}`, async (req, res) => {
 
         // Отправляем сообщение обратно в Telegram через обычный fetch-запрос
         try {
-            await fetch(`https://telegram.org{token}/sendMessage`, {
+            await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(messageData)
