@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Critters Pinball</title>
+    <!-- Подключаем Telegram Web Apps API и физический движок -->
+    <script src="https://telegram.org"></script>
+    <script src="https://cloudflare.com"></script>
+    <style>
+        body { margin: 0; padding: 0; background: #1a1a2e; color: #fff; font-family: sans-serif; overflow: hidden; }
+        #game-container { width: 100vw; height: 85vh; position: relative; }
+        #ui-container { height: 15vh; display: flex; justify-content: space-around; align-items: center; background: #161623; }
+        .btn { background: #ff4757; border: none; padding: 15px 30px; color: white; border-radius: 10px; font-weight: bold; font-size: 16px; cursor: pointer; }
+        .score { font-size: 18px; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+    <div id="game-container"></div>
+    <div id="ui-container">
+        <div class="score">Баланс: <span id="ball-count">50</span> 🟡</div>
+        <button class="btn" id="launch-btn">СТАРТ X10</button>
+        <div class="score">Очки: <span id="score-count">0</span> 🏆</div>
+    </div>
+
+    <script>
+        // Инициализация Telegram Web App
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        // Настройки Matter.js
+        const { Engine, Render, Runner, Bodies, Composite, Body, Events } = Matter;
+        const engine = Engine.create({ gravity: { y: 1 } });
+        const world = engine.world;
+
+        const width = window.innerWidth;
+        const height = window.innerHeight * 0.85;
+
+        const render = Render.create({
+            element: document.getElementById('game-container'),
+            engine: engine,
+            options: { width: width, height: height, wireframes: false, background: '#1a1a2e' }
+        });
+        Render.run(render);
+        Runner.run(Runner.create(), engine);
+
+        // Игровые переменные
+        let ballsLeft = 50;
+        let score = 0;
+
+        // Стены автомата
+        const leftWall = Bodies.rectangle(10, height/2, 20, height, { isStatic: true, render: { fillStyle: '#2e2e40' } });
+        const rightWall = Bodies.rectangle(width - 10, height/2, 20, height, { isStatic: true, render: { fillStyle: '#2e2e40' } });
+        Composite.add(world, [leftWall, rightWall]);
+
+        // Препятствия (гвоздики / Pegs) как в оригинальной игре
+        const rows = 7;
+        const pegRadius = 6;
+        for (let i = 0; i < rows; i++) {
+            const pegsInRow = i % 2 === 0 ? 8 : 7;
+            const spacing = width / (pegsInRow + 1);
+            for (let j = 0; j < pegsInRow; j++) {
+                const x = spacing * (j + 1);
+                const y = 150 + (i * 60);
+                const peg = Bodies.circle(x, y, pegRadius, { 
+                    isStatic: true, 
+                    label: 'peg',
+                    render: { fillStyle: '#00d2d3' } 
+                });
+                Composite.add(world, peg);
+            }
+        }
+
+        // Приемные слоты снизу (Награды: Сундуки, Канди, Крипсы)
+        const slotCount = 5;
+        const slotWidth = width / slotCount;
+        const rewards = [10, 50, 200, 50, 10]; // Очки за попадание в разные воронки
+
+        for (let i = 0; i < slotCount; i++) {
+            // Разделители слотов
+            if (i > 0) {
+                const divider = Bodies.rectangle(i * slotWidth, height - 40, 8, 80, { isStatic: true, render: { fillStyle: '#5f27cd' } });
+                Composite.add(world, divider);
+            }
+            // Сенсорная зона внутри слота для подсчета очков
+            const sensor = Bodies.rectangle(i * slotWidth + slotWidth/2, height - 10, slotWidth - 10, 20, {
+                isStatic: true,
+                isSensor: true,
+                label: `slot_${rewards[i]}`,
+                render: { fillStyle: 'transparent' }
+            });
+            Composite.add(world, sensor);
+        }
+
+        // Логика запуска шаров (Мульти-дроп как в Clash of Critters)
+        document.getElementById('launch-btn').addEventListener('click', () => {
+            if (ballsLeft < 10) return alert('Недостаточно шаров!');
+            ballsLeft -= 10;
+            document.getElementById('ball-count').innerText = ballsLeft;
+
+            // Спавним 10 шаров с небольшой задержкой во времени
+            for (let i = 0; i < 10; i++) {
+                setTimeout(() => {
+                    const randomX = (width / 2) + (Math.random() * 40 - 20);
+                    const ball = Bodies.circle(randomX, 40, 10, {
+                        restitution: 0.6, // Прыгучесть
+                        friction: 0.05,
+                        label: 'ball',
+                        render: { fillStyle: '#ff9f43' }
+                    });
+                    Composite.add(world, ball);
+                }, i * 150);
+            }
+        });
+
+        // Отслеживание попаданий в слоты наград
+        Events.on(engine, 'collisionStart', (event) => {
+            event.pairs.forEach((pair) => {
+                const labels = [pair.bodyA.label, pair.bodyB.label];
+                const ballBody = pair.bodyA.label === 'ball' ? pair.bodyA : (pair.bodyB.label === 'ball' ? pair.bodyB : null);
+                const slotLabel = pair.bodyA.label.startsWith('slot_') ? pair.bodyA.label : (pair.bodyB.label.startsWith('slot_') ? pair.bodyB.label : null);
+
+                if (ballBody && slotLabel) {
+                    const points = parseInt(slotLabel.split('_')[1]);
+                    score += points;
+                    document.getElementById('score-count').innerText = score;
+                    
+                    // Удаляем шар после падения в воронку
+                    Composite.remove(world, ballBody);
+
+                    // Отправляем результат на бэкенд (опционально)
+                    // fetch('/api/save-score', { method: 'POST', body: JSON.stringify({ userId: tg.initDataUnsafe.user.id, score: score }) });
+                }
+            });
+        });
+    </script>
+</body>
+</html>
